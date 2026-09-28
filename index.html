@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BTC 15m">
+<meta name="theme-color" content="#0b0e14">
+<title>BTC 15m Bot</title>
+<style>
+:root{--bg:#0b0e14;--card:#151a24;--line:#232b3a;--tx:#e8ecf3;--mut:#8b96a9;--up:#22c55e;--dn:#ef4444;--nt:#f59e0b;--ac:#4f8cff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+body{padding:calc(env(safe-area-inset-top,0px) + 14px) 14px calc(env(safe-area-inset-bottom,0px) + 24px);max-width:520px;margin:0 auto}
+h1{font-size:19px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:12.5px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.sig{text-align:center;padding:22px 16px}
+.sig .call{font-size:44px;font-weight:800;letter-spacing:1px}
+.sig .meta{color:var(--mut);font-size:13px;margin-top:6px}
+.UP{color:var(--up)}.DOWN{color:var(--dn)}.NOTRADE{color:var(--nt)}
+.bar{height:10px;border-radius:6px;background:var(--dn);overflow:hidden;margin:14px 0 4px}
+.bar>div{height:100%;background:var(--up);width:50%;transition:width .4s}
+.row{display:flex;justify-content:space-between;font-size:13px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#0f1420;border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-size:17px;color:var(--tx);margin-top:2px}
+.stat span{font-size:11.5px;color:var(--mut)}
+button{font:inherit;font-size:16px;font-weight:600;border:0;border-radius:12px;padding:13px;width:100%;background:var(--ac);color:#fff;margin-top:8px}
+button.sec{background:#222b3d}
+button:disabled{opacity:.5}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
+input{font-size:16px;width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0f1420;color:var(--tx);margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 4px;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:500}
+pre{white-space:pre-wrap;font-size:12.5px;color:var(--mut);margin:8px 0 0;line-height:1.5}
+.warn{font-size:11.5px;color:var(--mut);line-height:1.5}
+.spot{font-size:26px;font-weight:800;margin:2px 0 10px}
+.edge{margin-top:10px;padding:10px 12px;border-radius:12px;background:#0f1420;font-size:13.5px;line-height:1.5}
+.pos{color:var(--up)}.neg{color:var(--dn)}
+.tv{height:420px;border-radius:12px;overflow:hidden;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>BTC 15m Direction Bot</h1>
+<div class="sub" id="status">Idle</div>
+
+<div class="card sig">
+  <div class="call NOTRADE" id="call">—</div>
+  <div class="meta" id="callMeta">Tap “Start live” to begin</div>
+  <div class="bar"><div id="pbar"></div></div>
+  <div class="row"><span>DOWN</span><span id="pTxt">P(up) —</span><span>UP</span></div>
+</div>
+
+<div class="card">
+  <b style="font-size:15px">Kalshi · BTC 15-min market</b>
+  <div class="row" style="margin-top:8px"><span>BTC spot <span id="spotSrc"></span></span><span id="kTicker"></span></div>
+  <div class="spot" id="spot">—</div>
+  <div class="grid">
+    <div class="stat"><span>Price to beat (strike)</span><b id="kStrike">—</b></div>
+    <div class="stat"><span>Spot vs strike</span><b id="kDelta">—</b></div>
+    <div class="stat"><span>YES ask / NO ask</span><b id="kAsk">—</b></div>
+    <div class="stat"><span>Market closes in</span><b id="kClose">—</b></div>
+  </div>
+  <div class="edge" id="kEdge">Loading Kalshi…</div>
+</div>
+
+<div class="card">
+  <div class="grid">
+    <div class="stat"><span>Last close</span><b id="px">—</b></div>
+    <div class="stat"><span>Next candle closes in</span><b id="cd">—</b></div>
+    <div class="stat"><span>ADX / regime</span><b id="adx">—</b></div>
+    <div class="stat"><span>Live record</span><b id="rec">—</b></div>
+  </div>
+  <button id="btnLive">Start live</button>
+  <button id="btnBt" class="sec">Run backtest</button>
+  <pre id="btOut"></pre>
+</div>
+
+<div class="card">
+  <b style="font-size:15px">TradingView chart</b>
+  <button id="btnTv" class="sec">Show BTCUSD 15m chart</button>
+  <div id="tvBox" class="tv" style="display:none"></div>
+</div>
+
+<div class="card">
+  <b style="font-size:15px">Settings</b>
+  <label>Kalshi proxy URL (optional, your own Cloudflare Worker)<input id="proxy" type="url" placeholder="https://your-worker.workers.dev"></label>
+  <button id="btnKt" class="sec">Test Kalshi connection</button>
+  <pre id="kTest"></pre>
+  <label>Min confidence to call (0.50–0.70)<input id="minConf" type="number" step="0.01" min="0.5" max="0.7" inputmode="decimal"></label>
+  <label>Skip if ADX below (chop filter)<input id="chopAdx" type="number" step="1" min="0" max="40" inputmode="numeric"></label>
+</div>
+
+<div class="card">
+  <b style="font-size:15px">Recent calls</b>
+  <table><thead><tr><th>Candle (UTC)</th><th>Call</th><th>P(up)</th><th>Result</th></tr></thead><tbody id="log"></tbody></table>
+  <button id="btnClear" class="sec">Clear log</button>
+</div>
+
+<div class="card warn">
+  Keep this page open and the screen on — iOS pauses web pages in the background, so it can't run while Safari is closed or the phone is locked.
+  Short-term crypto direction is very close to a coin flip; run the backtest and watch the live record over 200+ calls before trusting anything here.
+  Research tool only, not financial advice.
+</div>
+
+<script>
+// ==CORE_START==
+const GRAN = 900, GMS = GRAN * 1000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ---------- data (Coinbase -> Kraken -> Binance.US fallbacks; all send CORS headers)
+async function getJSON(u){ const r = await fetch(u); if(!r.ok) throw new Error(r.status); return r.json(); }
+function clean(rows){
+  const m = new Map(); rows.forEach(x => m.set(x.t, x));
+  return [...m.values()].sort((a,b) => a.t-b.t);
+}
+async function fromCoinbase(n){
+  const rows = []; let end = Date.now();
+  while(rows.length < n){
+    const start = end - GMS*300;
+    const j = await getJSON(`https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=${GRAN}&start=${new Date(start).toISOString()}&end=${new Date(end).toISOString()}`);
+    if(!j.length) break;
+    j.forEach(([t,l,h,o,c,v]) => rows.push({t:t*1000,o,h,l,c,v}));
+    end = start; if(rows.length < n) await sleep(350);
+  }
+  return rows;
+}
+async function fromKraken(){
+  const j = await getJSON('https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=15');
+  const k = Object.keys(j.result).find(x => x !== 'last');
+  return j.result[k].map(r => ({t:r[0]*1000,o:+r[1],h:+r[2],l:+r[3],c:+r[4],v:+r[6]}));
+}
+async function fromBinanceUS(){
+  const j = await getJSON('https://api.binance.us/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=1000');
+  return j.map(r => ({t:r[0],o:+r[1],h:+r[2],l:+r[3],c:+r[4],v:+r[5]}));
+}
+let SOURCE = '';
+async function fetchCandles(n){
+  const tries = [['Coinbase',()=>fromCoinbase(n)],['Kraken',fromKraken],['Binance.US',fromBinanceUS]];
+  let err;
+  for(const [name,fn] of tries){
+    try{ const rows = clean(await fn()); if(rows.length > 150){ SOURCE = name; return dropOpen(rows); } }
+    catch(e){ err = e; }
+  }
+  throw new Error('All data sources failed: ' + (err && err.message));
+}
+function dropOpen(rows){ const now = Date.now(); return rows.filter(x => x.t + GMS <= now); }
+
+// ---------- indicator helpers
+function ewm(x, alpha){
+  const out = new Array(x.length).fill(NaN); let prev = NaN;
+  for(let i=0;i<x.length;i++){
+    if(Number.isNaN(x[i])) continue;
+    prev = Number.isNaN(prev) ? x[i] : alpha*x[i] + (1-alpha)*prev; out[i] = prev;
+  }
+  return out;
+}
+const wilder = (x,n=14) => ewm(x, 1/n);
+const emaSpan = (x,n) => ewm(x, 2/(n+1));
+function rolling(x, n, fn){
+  const out = new Array(x.length).fill(NaN);
+  for(let i=n-1;i<x.length;i++) out[i] = fn(x.slice(i-n+1,i+1));
+  return out;
+}
+const mean = a => a.reduce((s,v)=>s+v,0)/a.length;
+const std = a => { const m = mean(a); return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/(a.length-1)); };
+
+const FEATS = ['ret1','ret3','ret6','ret12','ret24','rsi','adx','di_diff','atr_pct','vwap_dist',
+               'ema_spread','bb_pct','body','upper_wick','lower_wick','vol_z','hr_sin','hr_cos'];
+
+function features(cs){
+  const n = cs.length;
+  const o = cs.map(x=>x.o), h = cs.map(x=>x.h), l = cs.map(x=>x.l), c = cs.map(x=>x.c), v = cs.map(x=>x.v);
+  const F = {}; FEATS.forEach(k => F[k] = new Array(n).fill(NaN));
+  for(const k of [1,3,6,12,24]) for(let i=k;i<n;i++) F['ret'+k][i] = c[i]/c[i-k]-1;
+
+  const d = c.map((x,i)=> i? x-c[i-1] : NaN);
+  const up = wilder(d.map(x=>Number.isNaN(x)?NaN:Math.max(x,0)));
+  const dn = wilder(d.map(x=>Number.isNaN(x)?NaN:Math.max(-x,0)));
+  for(let i=0;i<n;i++) F.rsi[i] = dn[i]===0 ? 100 : 100 - 100/(1+up[i]/dn[i]);
+
+  const tr = c.map((_,i)=> i===0 ? h[i]-l[i] : Math.max(h[i]-l[i], Math.abs(h[i]-c[i-1]), Math.abs(l[i]-c[i-1])));
+  const atr = wilder(tr);
+  const pdm = h.map((_,i)=>{ if(!i) return 0; const u=h[i]-h[i-1], dd=l[i-1]-l[i]; return (u>dd&&u>0)?u:0; });
+  const mdm = h.map((_,i)=>{ if(!i) return 0; const u=h[i]-h[i-1], dd=l[i-1]-l[i]; return (dd>u&&dd>0)?dd:0; });
+  const pw = wilder(pdm), mw = wilder(mdm);
+  const pdi = pw.map((x,i)=>100*x/atr[i]), mdi = mw.map((x,i)=>100*x/atr[i]);
+  const dx = pdi.map((x,i)=>{ const s = x+mdi[i]; return s===0?NaN:100*Math.abs(x-mdi[i])/s; });
+  const adx = wilder(dx);
+  for(let i=0;i<n;i++){ F.adx[i]=adx[i]; F.di_diff[i]=pdi[i]-mdi[i]; F.atr_pct[i]=atr[i]/c[i]; }
+
+  // VWAP resets each UTC day
+  let day=-1, pv=0, vv=0;
+  for(let i=0;i<n;i++){
+    const dd = Math.floor(cs[i].t/86400000);
+    if(dd!==day){ day=dd; pv=0; vv=0; }
+    pv += (h[i]+l[i]+c[i])/3*v[i]; vv += v[i];
+    F.vwap_dist[i] = (c[i] - pv/vv)/atr[i];
+  }
+  const e9 = emaSpan(c,9), e21 = emaSpan(c,21);
+  for(let i=0;i<n;i++) F.ema_spread[i] = (e9[i]-e21[i])/atr[i];
+
+  const ma = rolling(c,20,mean), sd = rolling(c,20,std);
+  for(let i=0;i<n;i++) F.bb_pct[i] = (c[i]-(ma[i]-2*sd[i]))/(4*sd[i]);
+
+  for(let i=0;i<n;i++){
+    const rg = h[i]-l[i];
+    if(rg>0){
+      F.body[i]=(c[i]-o[i])/rg; F.upper_wick[i]=(h[i]-Math.max(o[i],c[i]))/rg; F.lower_wick[i]=(Math.min(o[i],c[i])-l[i])/rg;
+    }
+  }
+  const vm = rolling(v,96,mean), vs = rolling(v,96,std);
+  for(let i=0;i<n;i++) F.vol_z[i] = (v[i]-vm[i])/vs[i];
+  for(let i=0;i<n;i++){
+    const dt = new Date(cs[i].t), hr = dt.getUTCHours()+dt.getUTCMinutes()/60;
+    F.hr_sin[i]=Math.sin(2*Math.PI*hr/24); F.hr_cos[i]=Math.cos(2*Math.PI*hr/24);
+  }
+  return cs.map((_,i)=> FEATS.map(k=>F[k][i]));   // rows of feature vectors
+}
+const okRow = r => r.every(x => Number.isFinite(x));
+function labels(cs){ return cs.map((_,i)=> i<cs.length-1 ? (cs[i+1].c > cs[i+1].o ? 1 : 0) : NaN); }
+
+// ---------- model: L2 logistic regression on standardized features
+function fitLogit(X, y, iters=500, lr=0.3, l2=0.02){
+  const n = X.length, m = X[0].length;
+  const mu = Array.from({length:m},(_,j)=>mean(X.map(r=>r[j])));
+  const sg = Array.from({length:m},(_,j)=>std(X.map(r=>r[j]))||1);
+  const Z = X.map(r => r.map((x,j)=> Math.max(-5,Math.min(5,(x-mu[j])/sg[j]))));
+  let w = new Array(m).fill(0), b = 0;
+  for(let it=0; it<iters; it++){
+    const gw = new Array(m).fill(0); let gb = 0;
+    for(let i=0;i<n;i++){
+      let z=b; for(let j=0;j<m;j++) z+=w[j]*Z[i][j];
+      const e = 1/(1+Math.exp(-z)) - y[i];
+      for(let j=0;j<m;j++) gw[j]+=e*Z[i][j]; gb+=e;
+    }
+    for(let j=0;j<m;j++) w[j] -= lr*(gw[j]/n + l2*w[j]);
+    b -= lr*gb/n;
+  }
+  return {w,b,mu,sg};
+}
+function predictP(model, row){
+  let z = model.b;
+  for(let j=0;j<row.length;j++) z += model.w[j]*Math.max(-5,Math.min(5,(row[j]-model.mu[j])/model.sg[j]));
+  return 1/(1+Math.exp(-z));
+}
+function trainOn(cs){
+  const F = features(cs), y = labels(cs), X = [], Y = [];
+  F.forEach((r,i)=>{ if(okRow(r) && !Number.isNaN(y[i])){ X.push(r); Y.push(y[i]); } });
+  return fitLogit(X,Y);
+}
+
+// ---------- walk-forward backtest (never tests on trained data)
+function backtest(cs, minConfs=[0.52,0.55,0.58,0.60], chopAdx=18, folds=5){
+  const F = features(cs), y = labels(cs), X = [], Y = [], A = [];
+  F.forEach((r,i)=>{ if(okRow(r) && !Number.isNaN(y[i])){ X.push(r); Y.push(y[i]); A.push(r[FEATS.indexOf('adx')]); } });
+  const n = X.length, start = Math.floor(n*0.5), step = Math.floor((n-start)/folds);
+  const P=[], T=[], AD=[];
+  for(let f=0; f<folds; f++){
+    const a = start+f*step, b = start+(f+1)*step;
+    const model = fitLogit(X.slice(0,a-1), Y.slice(0,a-1));
+    for(let i=a;i<b;i++){ P.push(predictP(model,X[i])); T.push(Y[i]); AD.push(A[i]); }
+  }
+  const res = { n:P.length, base: mean(T), acc: mean(P.map((p,i)=>(p>0.5?1:0)===T[i]?1:0)), rows:[] };
+  for(const th of minConfs){
+    let hit=0, cnt=0;
+    P.forEach((p,i)=>{ if(Math.max(p,1-p)>=th && AD[i]>=chopAdx){ cnt++; if((p>0.5?1:0)===T[i]) hit++; } });
+    res.rows.push({th, cnt, acc: cnt? hit/cnt : NaN, share: cnt/P.length});
+  }
+  return res;
+}
+
+// ---------- Kalshi KXBTC15M parsing (handles dollar-string fields or legacy cents)
+function parseKalshi(ms){
+  if(!ms || !ms.length) return null;
+  const m = [...ms].sort((a,b)=> new Date(a.close_time)-new Date(b.close_time))[0];
+  const px = k => { if(m[k+'_dollars']!=null && m[k+'_dollars']!=='') return +m[k+'_dollars']; if(m[k]!=null) return +m[k]/100; return NaN; };
+  let strike = m.floor_strike ?? m.cap_strike;
+  if(strike==null){
+    const txt = [m.yes_sub_title,m.subtitle,m.title].filter(Boolean).join(' ');
+    const g = txt.match(/\$([\d,]+(?:\.\d+)?)/); if(g) strike = +g[1].replace(/,/g,'');
+  }
+  const yesBid = px('yes_bid'), yesAsk = px('yes_ask');
+  const noAsk = Number.isFinite(px('no_ask')) ? px('no_ask') : (Number.isFinite(yesBid) ? 1-yesBid : NaN);
+  return { ticker:m.ticker, strike: strike==null? NaN : +strike, yesBid, yesAsk, noAsk, close: new Date(m.close_time).getTime() };
+}
+// ==CORE_END==
+
+// ---------------- UI ----------------
+const $ = id => document.getElementById(id);
+const store = { get:(k,d)=>{ try{ const v=localStorage.getItem(k); return v===null?d:JSON.parse(v);}catch(e){return d;} },
+                set:(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} } };
+let cfg = store.get('cfg',{minConf:0.55, chopAdx:18, proxy:''});
+$('minConf').value = cfg.minConf; $('chopAdx').value = cfg.chopAdx; $('proxy').value = cfg.proxy||'';
+const saveCfg = () => { cfg = {minConf:+$('minConf').value||0.55, chopAdx:+$('chopAdx').value||0, proxy:$('proxy').value.trim()}; store.set('cfg',cfg); kBackoff = 0; refreshLive(); };
+$('minConf').onchange = saveCfg; $('chopAdx').onchange = saveCfg; $('proxy').onchange = saveCfg; $('btnKt').onclick = testKalshi;
+
+// ---- live spot + Kalshi market (polls every 5s while the page is visible)
+let spot = NaN, kal = null, lastP = NaN, kalErr = '';
+const usd = x => Number.isFinite(x) ? '$'+x.toLocaleString(undefined,{maximumFractionDigits:2}) : '—';
+async function getSpot(){
+  try{ const j = await getJSON('https://api.exchange.coinbase.com/products/BTC-USD/ticker'); spot = +j.price; $('spotSrc').textContent='· Coinbase'; return; }catch(e){}
+  try{ const j = await getJSON('https://api.kraken.com/0/public/Ticker?pair=XBTUSD'); spot = +j.result[Object.keys(j.result)[0]].c[0]; $('spotSrc').textContent='· Kraken'; }catch(e){}
+}
+const KURL = 'https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=KXBTC15M&status=open&limit=5';
+function kRoutes(){
+  const r = [];
+  if(cfg.proxy) r.push(['Your proxy', cfg.proxy.replace(/\/$/,'') + '/trade-api/v2/markets?series_ticker=KXBTC15M&status=open&limit=5']);
+  r.push(['Direct', KURL],
+         ['corsproxy.io', 'https://corsproxy.io/?url=' + encodeURIComponent(KURL)],
+         ['allorigins', 'https://api.allorigins.win/raw?url=' + encodeURIComponent(KURL)]);
+  return r;
+}
+let kRoute = '', kBackoff = 0;
+async function getKalshi(force){
+  if(!force && Date.now() < kBackoff) return;
+  const routes = kRoutes().sort((a,b)=> (b[0]===kRoute) - (a[0]===kRoute));   // last working route first
+  const errs = [];
+  for(const [name,url] of routes){
+    try{
+      const j = await getJSON(url), p = parseKalshi(j.markets);
+      if(p){ kal = p; kRoute = name; kalErr = ''; return; }
+      errs.push(name+': no open KXBTC15M market');
+    }catch(e){ errs.push(name+': '+e.message); }
+  }
+  kal = null; kBackoff = Date.now() + 20000;
+  kalErr = 'Could not load Kalshi. ' + errs.join(' · ') + ' — retrying shortly. Use “Test Kalshi connection” in Settings.';
+}
+async function testKalshi(){
+  const out = $('kTest'); out.textContent = 'Testing…';
+  let t = '';
+  for(const [name,url] of kRoutes()){
+    try{
+      const j = await getJSON(url), p = parseKalshi(j.markets);
+      t += p ? `✅ ${name}: OK (strike ${usd(p.strike)}, YES ask ${p.yesAsk})\n` : `⚠️ ${name}: reachable but no open KXBTC15M market\n`;
+    }catch(e){ t += `❌ ${name}: ${e.message}\n`; }
+    out.textContent = t + 'Testing…';
+  }
+  out.textContent = t; kBackoff = 0; refreshLive();
+}
+function renderKalshi(){
+  $('spot').textContent = usd(spot);
+  if(!kal){ $('kEdge').textContent = kalErr || 'Loading Kalshi…'; return; }
+  $('kTicker').textContent = (kal.ticker || '') + (kRoute ? ' · via ' + kRoute : '');
+  $('kStrike').textContent = usd(kal.strike);
+  const d = spot - kal.strike;
+  $('kDelta').innerHTML = Number.isFinite(d) ? `<span class="${d>=0?'pos':'neg'}">${d>=0?'+':'−'}${usd(Math.abs(d))}</span>` : '—';
+  $('kAsk').textContent = `${Number.isFinite(kal.yesAsk)?kal.yesAsk.toFixed(2):'—'} / ${Number.isFinite(kal.noAsk)?kal.noAsk.toFixed(2):'—'}`;
+  const left = Math.max(0, kal.close - Date.now());
+  $('kClose').textContent = `${Math.floor(left/60000)}:${String(Math.floor(left%60000/1000)).padStart(2,'0')}`;
+  if(Number.isFinite(lastP) && Number.isFinite(kal.yesAsk)){
+    const eu = (lastP - kal.yesAsk)*100, ed = ((1-lastP) - kal.noAsk)*100;
+    const best = eu >= ed ? ['YES (UP)', eu, kal.yesAsk] : ['NO (DOWN)', ed, kal.noAsk];
+    $('kEdge').innerHTML = `Bot P(up) <b>${(lastP*100).toFixed(1)}%</b> vs Kalshi YES <b>${(kal.yesAsk*100).toFixed(0)}¢</b>.<br>`+
+      `Larger gap: <b>${best[0]}</b> at ${(best[2]*100).toFixed(0)}¢ → <span class="${best[1]>0?'pos':'neg'}">${best[1]>0?'+':''}${best[1].toFixed(1)} pts</span> vs model. `+
+      `<span style="color:var(--mut)">A gap is only as good as the model, and the market usually knows more than a 15m indicator model.</span>`;
+  } else $('kEdge').textContent = 'Start live to compare the bot’s probability with Kalshi’s price.';
+}
+async function refreshLive(){ if(document.hidden) return; await Promise.all([getSpot(), getKalshi()]); renderKalshi(); }
+refreshLive(); setInterval(refreshLive, 5000); setInterval(renderKalshi, 1000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshLive(); });
+
+// ---- TradingView chart (display only; TradingView doesn't expose price data to pages)
+let tvLoaded = false;
+$('btnTv').onclick = () => {
+  const box = $('tvBox'), show = box.style.display === 'none';
+  box.style.display = show ? 'block' : 'none';
+  $('btnTv').textContent = show ? 'Hide chart' : 'Show BTCUSD 15m chart';
+  if(show && !tvLoaded){
+    tvLoaded = true;
+    box.innerHTML = '<div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div></div>';
+    const s = document.createElement('script');
+    s.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'; s.async = true;
+    s.text = JSON.stringify({autosize:true,symbol:'COINBASE:BTCUSD',interval:'15',timezone:'Etc/UTC',theme:'dark',style:'1',locale:'en',hide_side_toolbar:true,allow_symbol_change:false,save_image:false,support_host:'https://www.tradingview.com'});
+    box.firstChild.appendChild(s);
+  }
+};
+
+let log = store.get('log',[]);
+const fmtT = t => new Date(t).toISOString().slice(5,16).replace('T',' ');
+function renderLog(){
+  const done = log.filter(e=>e.actual && (e.call==='UP'||e.call==='DOWN'));
+  const hit = done.filter(e=>e.call===e.actual).length;
+  $('rec').textContent = done.length ? `${hit}/${done.length} (${(100*hit/done.length).toFixed(0)}%)` : '—';
+  $('log').innerHTML = log.slice(-20).reverse().map(e=>{
+    const ok = e.actual && (e.call==='UP'||e.call==='DOWN') ? (e.call===e.actual?'✅ ':'❌ ') : '';
+    return `<tr><td>${fmtT(e.target)}</td><td class="${e.call.replace(' ','')}">${e.call}</td><td>${(e.pUp*100).toFixed(1)}%</td><td>${e.actual? ok+e.actual : '…'}</td></tr>`;
+  }).join('');
+}
+$('btnClear').onclick = () => { if(confirm('Clear the prediction log?')){ log=[]; store.set('log',log); renderLog(); } };
+renderLog();
+
+function setStatus(s){ $('status').textContent = s; }
+function showSignal(call, pUp, adx, regime, px, target){
+  lastP = pUp; renderKalshi();
+  const el = $('call'); el.textContent = call; el.className = 'call ' + call.replace(' ','');
+  $('pbar').style.width = (pUp*100).toFixed(1)+'%'; $('pTxt').textContent = `P(up) ${(pUp*100).toFixed(1)}%`;
+  $('callMeta').textContent = `For the candle opening ${new Date(target).toISOString().slice(11,16)} UTC`;
+  $('adx').textContent = `${adx.toFixed(0)} · ${regime}`;
+  $('px').textContent = '$' + px.toLocaleString(undefined,{maximumFractionDigits:2});
+}
+
+let model = null, trainedAt = 0, running = false, nextRun = 0, busy = false;
+
+async function cycle(){
+  if(busy) return; busy = true;
+  try{
+    if(!model || Date.now()-trainedAt > 86400000){
+      setStatus('Training model on recent history…');
+      model = trainOn(await fetchCandles(3000)); trainedAt = Date.now();
+    }
+    setStatus('Fetching latest candles…');
+    const cs = await fetchCandles(400);
+    const F = features(cs), row = F[F.length-1];
+    if(!okRow(row)) throw new Error('Not enough data for features');
+    const pUp = predictP(model,row), adx = row[FEATS.indexOf('adx')], conf = Math.max(pUp,1-pUp);
+    const regime = adx < cfg.chopAdx ? 'CHOP' : 'TREND';
+    const call = (conf>=cfg.minConf && regime==='TREND') ? (pUp>0.5?'UP':'DOWN') : 'NO TRADE';
+    const target = cs[cs.length-1].t + GMS;
+    if(!log.some(e=>e.target===target)) log.push({target,pUp,adx,call,actual:null});
+    // score earlier predictions whose candle has now closed
+    log.forEach(e=>{ if(!e.actual){ const k = cs.find(x=>x.t===e.target); if(k) e.actual = k.c>k.o?'UP':'DOWN'; } });
+    log = log.slice(-300); store.set('log',log);
+    showSignal(call,pUp,adx,regime,cs[cs.length-1].c,target); renderLog();
+    setStatus(`Live · data: ${SOURCE} · updated ${new Date().toLocaleTimeString()}`);
+  }catch(e){ setStatus('Error: '+e.message+' (retrying next candle)'); }
+  busy = false;
+}
+
+function schedule(){ const now = Date.now(); nextRun = Math.floor(now/GMS)*GMS + GMS + 5000; }
+setInterval(()=>{
+  if(!running) return;
+  const left = Math.max(0, nextRun - 5000 - Date.now());
+  const m = Math.floor(left/60000), s = Math.floor(left%60000/1000);
+  $('cd').textContent = `${m}:${String(s).padStart(2,'0')}`;
+  if(Date.now() >= nextRun){ schedule(); cycle(); }
+},1000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && running && Date.now()>=nextRun){ schedule(); cycle(); } });
+
+let wakeLock = null;
+async function keepAwake(){ try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(running && !document.hidden) keepAwake(); });
+
+$('btnLive').onclick = () => {
+  running = !running;
+  $('btnLive').textContent = running ? 'Stop live' : 'Start live';
+  if(running){ schedule(); keepAwake(); cycle(); } else { setStatus('Stopped'); $('cd').textContent='—'; if(wakeLock) wakeLock.release().catch(()=>{}); }
+};
+
+$('btnBt').onclick = async () => {
+  const b = $('btnBt'); b.disabled = true; $('btOut').textContent = 'Downloading ~30 days of candles…';
+  try{
+    const cs = await fetchCandles(3000);
+    $('btOut').textContent = `Got ${cs.length} candles from ${SOURCE}. Running walk-forward test…`;
+    await sleep(50);
+    const r = backtest(cs,[0.52,0.55,0.58,0.60],cfg.chopAdx);
+    let t = `Tested on ${r.n} unseen candles\nBase rate (% up): ${(r.base*100).toFixed(1)}%\nAccuracy, every candle: ${(r.acc*100).toFixed(1)}%\n\nWhen confident and not in chop:\n`;
+    r.rows.forEach(x => t += x.cnt>=20 ? `  ≥${x.th.toFixed(2)}: ${(x.acc*100).toFixed(1)}% on ${x.cnt} calls (${(x.share*100).toFixed(0)}% of candles)\n` : `  ≥${x.th.toFixed(2)}: too few calls (${x.cnt})\n`);
+    t += `\nWithin 1–2 pts of 50% is noise. Fees/spread need ~52–53% to break even.`;
+    $('btOut').textContent = t;
+  }catch(e){ $('btOut').textContent = 'Error: '+e.message; }
+  b.disabled = false;
+};
+</script>
+</body>
+</html>
