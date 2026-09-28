@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BTC 15m Bot</title>
+<style>
+:root{--bg:#0e1116;--card:#171b22;--tx:#e8ecf1;--mu:#8b95a3;--up:#22c55e;--dn:#ef4444;--sk:#eab308}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px -apple-system,system-ui,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+.card{background:var(--card);border-radius:14px;padding:16px;margin:0 auto 12px;max-width:480px}
+h1{font-size:18px;margin:0 auto 12px;max-width:480px}.mu{color:var(--mu);font-size:13px}
+#call{font-size:44px;font-weight:800;margin:4px 0}#p{font-size:20px}
+.bar{height:10px;border-radius:5px;background:var(--dn);overflow:hidden;margin:10px 0}.bar i{display:block;height:100%;background:var(--up);width:50%}
+.row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #232934}.row:last-child{border:0}
+button,input{font:inherit}button{background:#2a3140;color:var(--tx);border:0;border-radius:10px;padding:10px 14px}
+input[type=range]{width:100%}
+</style></head><body>
+<h1>BTC 15m candle bot</h1>
+<div class="card"><div class="mu">Next candle open in <b id="cd">--:--</b> · BTC <b id="px">--</b></div>
+<div id="call">…</div><div id="p" class="mu">loading data</div>
+<div class="bar"><i id="bar"></i></div><div class="mu" id="ind"></div></div>
+<div class="card"><div class="mu" style="margin-bottom:6px">Confidence threshold: <b id="thv">0.55</b></div>
+<input type="range" id="th" min="50" max="65" value="55"></div>
+<div class="card"><div class="mu" style="margin-bottom:6px">Walk-forward backtest (out of sample)</div><div id="bt">running…</div></div>
+<div class="card"><div class="mu" style="margin-bottom:6px">Live track record (this device)</div><div id="tr">none yet</div>
+<div style="margin-top:8px"><button id="rf">Refresh now</button></div></div>
+<div class="card mu">Experimental. 15-minute direction is close to a coin flip; check the z-score above before trusting any signal. Not financial advice.</div>
+<script>
+const $=id=>document.getElementById(id),W=800,N=1800;
+let TH=.55,last=null;
+async function kl(end){
+  for(const h of['api.binance.com','api.binance.us']){try{
+    const r=await fetch(`https://${h}/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=1000`+(end?`&endTime=${end}`:''));
+    if(r.ok)return(await r.json()).map(k=>({t:k[0],ct:k[6],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5],tb:+k[9]}));}catch(e){}}
+  throw new Error('fetch failed')}
+async function hist(){const a=await kl(),b=await kl(a[0].t-1);return b.concat(a).slice(-N)}
+const ema=(a,n)=>{const k=2/(n+1),o=[a[0]];for(let i=1;i<a.length;i++)o.push(a[i]*k+o[i-1]*(1-k));return o};
+function rsi(c,n){const o=Array(c.length).fill(50);let u=0,d=0;for(let i=1;i<c.length;i++){const x=c[i]-c[i-1];u=(u*(n-1)+Math.max(x,0))/n;d=(d*(n-1)+Math.max(-x,0))/n;o[i]=100-100/(1+u/(d||1e-9))}return o}
+const rm=(a,i,n)=>{let s=0;for(let j=i-n+1;j<=i;j++)s+=a[j];return s/n};
+const rs=(a,i,n)=>{const m=rm(a,i,n);let s=0;for(let j=i-n+1;j<=i;j++)s+=(a[j]-m)**2;return Math.sqrt(s/n)||1e-9};
+function feats(d){
+  const c=d.map(x=>x.c),v=d.map(x=>x.v),e9=ema(c,9),e21=ema(c,21),e50=ema(c,50),e12=ema(c,12),e26=ema(c,26);
+  const mac=e12.map((x,i)=>x-e26[i]),sig=ema(mac,9),r14=rsi(c,14),r6=rsi(c,6);
+  const tr=d.map((x,i)=>i?Math.max(x.h-x.l,Math.abs(x.h-c[i-1]),Math.abs(x.l-c[i-1])):x.h-x.l);
+  let cv=0,cq=0,day=-1;const F=[];
+  d.forEach((x,i)=>{const dy=Math.floor(x.t/864e5);if(dy!==day){day=dy;cv=0;cq=0}
+    const tp=(x.h+x.l+x.c)/3;cv+=x.v;cq+=tp*x.v;const vw=cq/cv;
+    if(i<60){F.push(null);return}
+    const rg=(x.h-x.l)||1e-9,m20=rm(c,i,20),s20=rs(c,i,20),hr=new Date(x.t).getUTCHours()+new Date(x.t).getUTCMinutes()/60;
+    const rets=[];for(let j=i-15;j<=i;j++)rets.push(Math.log(c[j]/c[j-1]));
+    F.push([1,2,4,8,16,32].map(k=>Math.log(c[i]/c[i-k])).concat([
+      r14[i],r6[i],mac[i]/c[i],(mac[i]-sig[i])/c[i],c[i]/e9[i]-1,c[i]/e21[i]-1,c[i]/e50[i]-1,
+      (c[i]-m20)/(2*s20),rm(tr,i,14)/c[i],(v[i]-rm(v,i,48))/rs(v,i,48),x.tb/x.v,c[i]/vw-1,
+      (x.c-x.o)/rg,(x.h-Math.max(x.o,x.c))/rg,(Math.min(x.o,x.c)-x.l)/rg,(x.c-x.l)/rg,
+      Math.sin(2*Math.PI*hr/24),Math.cos(2*Math.PI*hr/24)]))});
+  return F}
+function train(X,y){
+  const n=X.length,p=X[0].length,mu=Array(p).fill(0),sd=Array(p).fill(0);
+  X.forEach(r=>r.forEach((x,j)=>mu[j]+=x/n));X.forEach(r=>r.forEach((x,j)=>sd[j]+=(x-mu[j])**2/n));
+  sd.forEach((s,j)=>sd[j]=Math.sqrt(s)||1);
+  const Z=X.map(r=>r.map((x,j)=>(x-mu[j])/sd[j])),w=Array(p).fill(0);let b=0;
+  for(let ep=0;ep<250;ep++){const g=Array(p).fill(0);let gb=0;
+    for(let i=0;i<n;i++){let z=b;for(let j=0;j<p;j++)z+=w[j]*Z[i][j];const e=1/(1+Math.exp(-z))-y[i];gb+=e;for(let j=0;j<p;j++)g[j]+=e*Z[i][j]}
+    for(let j=0;j<p;j++)w[j]-=.3*(g[j]/n+.05*w[j]);b-=.3*gb/n}
+  return{w,b,mu,sd}}
+const pred=(m,x)=>{let z=m.b;x.forEach((v,j)=>z+=m.w[j]*(v-m.mu[j])/m.sd[j]);return 1/(1+Math.exp(-z))};
+function backtest(d,F){
+  const y=d.map((_,i)=>i<d.length-1?+(d[i+1].c>d[i+1].o):null),ok=[];
+  for(let i=60;i<d.length-1;i++)ok.push(i);
+  const res=[];let m=null;
+  for(let k=W;k<ok.length;k++){
+    if(!m||(k-W)%96===0){const ids=ok.slice(k-W,k);m=train(ids.map(i=>F[i]),ids.map(i=>y[i]))}
+    const i=ok[k];res.push({p:pred(m,F[i]),y:y[i]})}
+  return res}
+function showBT(res){
+  const n=res.length,base=res.reduce((a,r)=>a+r.y,0)/n,cor=res.filter(r=>(r.p>.5)==(r.y==1)),acc=cor.length/n;
+  const sg=res.filter(r=>r.p>=TH||r.p<=1-TH),sa=sg.length?sg.filter(r=>(r.p>.5)==(r.y==1)).length/sg.length:0;
+  const z=(cor.length-n/2)/Math.sqrt(n/4),R=(a,b,c='')=>`<div class="row"><span>${a}</span><b${c}>${b}</b></div>`;
+  $('bt').innerHTML=R('Candles tested',n)+R('Base rate (close up)',(base*100).toFixed(1)+'%')+R('Accuracy (all)',(acc*100).toFixed(1)+'%')+
+   R(`Signals ≥${TH.toFixed(2)}`,sg.length+' ('+(sg.length/n*100).toFixed(0)+'%)')+R('Accuracy on signals',sg.length?(sa*100).toFixed(1)+'%':'–')+
+   R('z vs coin flip',z.toFixed(2)+(Math.abs(z)<2?' (not significant)':''),Math.abs(z)<2?' style="color:var(--sk)"':' style="color:var(--up)"')}
+function show(p){
+  const c=p>=TH?['UP','var(--up)']:p<=1-TH?['DOWN','var(--dn)']:['SKIP','var(--sk)'];
+  $('call').textContent=c[0];$('call').style.color=c[1];$('p').textContent='P(close > open) = '+(p*100).toFixed(1)+'%';$('bar').style.width=p*100+'%'}
+function track(d,p,openT){
+  let L=[];try{L=JSON.parse(localStorage.getItem('b15')||'[]')}catch(e){}
+  L.forEach(r=>{if(r.up==null){const k=d.find(x=>x.t===r.t&&x.ct<Date.now());if(k)r.up=k.c>k.o}});
+  if(!L.some(r=>r.t===openT))L.push({t:openT,p,up:null});L=L.slice(-200);
+  try{localStorage.setItem('b15',JSON.stringify(L))}catch(e){}
+  const dn=L.filter(r=>r.up!=null&&(r.p>=TH||r.p<=1-TH)),hit=dn.filter(r=>(r.p>.5)==r.up).length;
+  $('tr').textContent=dn.length?`${hit}/${dn.length} signals correct (${(hit/dn.length*100).toFixed(0)}%)`:'none resolved yet — leave this page open or revisit'}
+async function load(){
+  try{$('p').textContent='loading…';
+    const d=await hist(),F=feats(d);last={d,F};
+    const y=d.map((_,i)=>i<d.length-1?+(d[i+1].c>d[i+1].o):null);
+    const cl=d.filter(x=>x.ct<Date.now()),ci=cl.length-1;
+    const ids=[];for(let i=60;i<ci;i++)ids.push(i);const tr=ids.slice(-W);
+    const m=train(tr.map(i=>F[i]),tr.map(i=>y[i]));
+    const p=pred(m,F[ci]);last.p=p;show(p);
+    $('px').textContent='$'+d[d.length-1].c.toLocaleString(undefined,{maximumFractionDigits:0});
+    $('ind').textContent=`RSI14 ${F[ci][6].toFixed(0)} · BB pos ${F[ci][13].toFixed(2)} · VWAP dist ${(F[ci][17]*100).toFixed(2)}%`;
+    track(d,p,cl[ci].ct+1);
+    setTimeout(()=>{last.res=backtest(d,F);last.res_ok=1;showBT(last.res)},50);
+  }catch(e){$('p').textContent='Error: '+e.message+' (network/geo-block?)';$('call').textContent='–'}}
+$('th').oninput=e=>{TH=e.target.value/100;$('thv').textContent=TH.toFixed(2);if(last){if(last.p!=null)show(last.p);if(last.res)showBT(last.res)}};
+$('rf').onclick=load;
+setInterval(()=>{const s=900-(Math.floor(Date.now()/1000)%900);$('cd').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  if(s===897)setTimeout(load,3000)},1000);
+load();
+</script></body></html>
